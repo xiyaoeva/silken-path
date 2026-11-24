@@ -28,3 +28,7 @@ supabase/schema.sql 提供记录表和默认封闭 RLS。正式上线时：
 3. 为律师工作台增加登录、机构成员和案件范围授权；按机构制定 RLS，避免跨律所读取。
 4. 将生成摘要与提交资料分开授权，明确告知真实律所、留存期限和撤回渠道。
 5. 当前站点为纯静态，不包含后端、邮件服务或已连接的 Supabase。
+
+## GitHub Pages
+
+已准备 `.github/workflows/pages.yml`。将项目推送到 GitHub 仓库 main 分支后，在仓库 Settings → Pages → Build and deployment 选择 GitHub Actions。工作流会发布 dist/，无需构建依赖。
