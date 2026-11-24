@@ -8,3 +8,5 @@
 .immersive .status-detail{margin-top:24px}
 
 .email-notice{font-size:14px;color:#999;margin-top:-25px}
+
+.immersive header{justify-content:flex-end}
