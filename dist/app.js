@@ -1,42 +1,277 @@
-const state={step:0,answers:{},selected:null,history:[]};
-const $=s=>document.querySelector(s);const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const icons={work:'<rect x="5" y="10" width="25" height="20" rx="3"/><path d="M12 10V5h11v5M5 18h25M16 17v5h5v-5"/>',star:'<path d="m18 3 5 10 11 2-8 8 2 11-10-5-10 5 2-11-8-8 11-2Z"/>',spark:'<path d="m18 3 4 11 11 4-11 4-4 11-4-11-11-4 11-4ZM29 1v8M25 5h8"/>',compass:'<circle cx="18" cy="18" r="14"/><path d="m24 11-4 10-9 4 4-10Z"/>',chat:'<path d="M5 5h26v20H17L9 32v-7H5ZM11 12h14M11 18h9"/>'};
-function icon(key){return `<svg class="icon" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round">${icons[key]||icons.compass}</svg>`}
-function choices(items,multi=false){return `<div class="options">${items.map(([v,t,d,k],i)=>`<button type="button" class="option ${items.length%2&&i===items.length-1?'wide':''} ${(multi?(state.selected||[]).includes(v):state.selected===v)?'selected':''}" data-value="${esc(v)}" aria-pressed="${multi?(state.selected||[]).includes(v):state.selected===v}"><span class="choice-check" aria-hidden="true"></span>${icon(k)}<span><strong>${esc(t)}</strong></span></button>`).join('')}</div>`}
-const paths=[['H-1B','H-1B 工作签证','专业职业 · 雇主支持','work'],['EB-1A','EB-1A 杰出人才','职业成就 · 永久居留','star'],['O-1','O-1 杰出能力','专业影响力 · 在美工作','spark'],['探索方向','还不确定','一起探索适合的方向','compass']];
-function fields(html){return `<form id="step-form">${html}</form>`}function field(name,label,type='text',placeholder=''){return `<label class="field">${label}<input name="${name}" type="${type}" placeholder="${placeholder}" value="${esc(state.answers[name])}" required maxlength="200"></label>`}
-function branch(){return state.answers.path==='H-1B'?{title:'聊聊你的工作机会。',hint:'这能帮助律师了解雇主支持情况。不确定也没关系。',items:[['已有雇主支持','已有雇主支持','已获得工作机会，或正在美国工作','work'],['正在找工作','正在寻找机会','尚未确认提供支持的雇主','compass'],['需要讨论','情况比较特殊','转雇主、延期，或其他情况','chat']]}:{title:'哪些成就最能代表你？',hint:'可以多选。这里只收集线索，具体证据由律师进一步审核。',items:[['奖项','专业奖项','行业、国家或国际认可','star'],['发表与报道','发表与媒体报道','论文、作品或有关你的报道','chat'],['评审与贡献','评审与原创贡献','担任评审，或有重要专业贡献','spark'],['领导与薪酬','领导角色与薪酬','关键岗位，或行业内较高薪酬','work'],['暂不确定','暂不确定','希望和律师一起梳理','compass']]}}
-const steps=['name','location','status','path','profession','background','timeline','notes','email','done'];
-let moving=false, transitionTimer;
-function current(){return steps[state.step]}
-function inputQuestion(key,type,placeholder){return fields(`<label class="sr-only" for="answer">${placeholder}</label><input id="answer" name="${key}" type="${type}" placeholder="${placeholder}" value="${esc(state.answers[key])}" required maxlength="200" autocomplete="${key==='name'?'given-name':key==='email'?'email':'off'}">`)}
-function render(){moving=false;const a=state.answers,k=current();let title='',hint='',body='',reply='';state.selected=k==='status'?a.statusChoice:k==='path'?a.path:k==='location'?a.location:k==='timeline'?a.timeline:k==='background'?(a.path==='H-1B'?a.employer:a.achievements||[]):null;
-if(k==='welcome'){title='你好，我是 Silky。';hint='移民的事，我们慢慢聊。<br>先从几个小问题开始，我会帮你把思路整理好。';body='<div class="welcome-note"><span>✧</span> 聊完，送你一份免费的咨询准备摘要。</div>'}
-if(k==='name'){title='怎么称呼你？';hint='名字、昵称，都可以。';body=inputQuestion('name','text','你喜欢的称呼')}
-if(k==='location'){reply=`很高兴认识你，${esc(a.name)}。`;title='你现在住在哪里？';hint='这样，我就知道从哪里开始聊了。';body=choices([['美国境内','我在美国','已经在这里开启生活','compass'],['中国大陆','我在中国大陆','正在计划新的可能','work'],['其他国家或地区','我在其他地方','每条路，都有自己的起点','spark']])}
-if(k==='status'){title='你目前是什么签证或身份？';body=choices([['F-1 / OPT','F-1 / OPT'],['H-1B','H-1B'],['O-1','O-1'],['L-1','L-1'],['其他 / 不确定','其他 / 不确定']]);if(state.selected==='其他 / 不确定')body+=`<div class="status-detail">${inputQuestion('status','text','请填写你的情况')}</div>`}
+// 前台问答页：题目从 /api/form 读取，答完后提交到 /api/submit。
+const state = {
+  form: null,      // { version_id, consent_version, questions }
+  answers: {},     // 这一项的编号 → 回答
+  pos: 0,          // 当前在“可见题目”里的位置；等于题目数时是确认页
+  selected: null,  // 当前选择题的临时选择
+  done: false,
+  sending: false,
+};
 
-if(k==='path'){reply='了解了。接下来，聊聊你想去的方向。';title='你想了解哪种申请？';hint='还没想好也没关系，我会陪你一起梳理。';body=choices(paths)}
-if(k==='profession'){reply=a.path==='探索方向'?'没关系，不需要现在就有答案。':`好，我们先围绕 ${esc(a.path)} 来聊。`;title='你平时从事什么工作？';hint='用你自己的话说就好，不需要专业术语。';body=inputQuestion('profession','text','例如：软件工程师、研究员、设计师')}
-if(k==='background'){const b=branch();reply=`接下来，了解一点你的职业经历。`;title=b.title;hint=b.hint;body=choices(b.items,a.path!=='H-1B')}
-if(k==='timeline'){reply='谢谢，这些线索会让后续沟通更有方向。';title='你希望什么时候解决这次签证或移民需求？';hint='按你的节奏来。';body=choices([['尽快','越快越好','近期有需要处理的安排','spark'],['3个月内','3 个月内','准备开始规划','work'],['半年内','半年内','给自己留一些准备时间','compass'],['先了解','暂时只是了解一下','不用急着做决定','chat']])}
-if(k==='notes'){reply='你的故事，已经渐渐清晰了。';title='还有需要补充的吗？';hint='比如身份到期、工作变动，或家人的安排。也可以先跳过。';body=fields(`<label class="sr-only" for="notes">补充说明</label><textarea id="notes" name="notes" maxlength="2000" placeholder="想说什么，都可以写在这里。">${esc(a.notes)}</textarea>`)}
-if(k==='email'){reply='差不多了，我来把这些整理成一份摘要。';title='你的联系邮箱是？';hint='';body=inputQuestion('email','email','you@example.com')}
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-if(k==='done'){title='请留意你的邮箱。';body='<p class="email-notice">演示版暂不发送邮件。</p>'}
+const icons = {
+  work: '<rect x="5" y="10" width="25" height="20" rx="3"/><path d="M12 10V5h11v5M5 18h25M16 17v5h5v-5"/>',
+  star: '<path d="m18 3 5 10 11 2-8 8 2 11-10-5-10 5 2-11-8-8 11-2Z"/>',
+  spark: '<path d="m18 3 4 11 11 4-11 4-4 11-4-11-11-4 11-4ZM29 1v8M25 5h8"/>',
+  compass: '<circle cx="18" cy="18" r="14"/><path d="m24 11-4 10-9 4 4-10Z"/>',
+  chat: '<path d="M5 5h26v20H17L9 32v-7H5ZM11 12h14M11 18h9"/>',
+};
+const icon = (key) => `<svg class="icon" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round">${icons[key] || icons.compass}</svg>`;
 
-$('#progress').style.width=`${state.step/(steps.length-1)*100}%`;$('#step-label').textContent='';$('#step-count').textContent='';
-$('#content').innerHTML=`<div class="chat-history">${state.history.slice(0,state.step).map(entry=>`<div class="past-question">${esc(entry.question)}</div><div class="answer-row"><span class="answer-bubble">${esc(entry.answer)}</span></div>`).join('')}</div><div class="conversation fade" id="current-question"><h2 tabindex="-1">${k==='name'?'你好！<br><br>怎么称呼你？':title}</h2>${k==='background'&&a.path!=='H-1B'?'<p class="hint">可多选</p>':''}${body}<p id="error" class="error" role="alert"></p>${!['location','path','timeline','done'].includes(k)&&!(k==='status'&&state.selected!=='其他 / 不确定')&&!(k==='background'&&a.path==='H-1B')?`<div class="actions"><button class="primary" id="next">${k==='consent'?'生成摘要':'继续'}</button></div>`:''}<div class="quiet-controls">${state.step>0?'<button id="back" class="back">返回</button>':''}${k==='notes'?'<button class="back" id="skip">跳过</button>':''}</div></div>`;
-$('#content').querySelectorAll('[data-value]').forEach(el=>el.onclick=()=>{if(moving)return;const v=el.dataset.value;const multi=k==='background'&&a.path!=='H-1B';if(multi){let list=state.selected||[];state.selected=v==='暂不确定'?['暂不确定']:list.includes(v)?list.filter(x=>x!==v):[...list.filter(x=>x!=='暂不确定'),v]}else state.selected=v;if(k==='status'){a.statusChoice=v;render();if(v==='其他 / 不确定'){$('#answer')?.focus()}else{moving=true;transitionTimer=setTimeout(()=>{moving=false;next()},380)}return}$('#content').querySelectorAll('[data-value]').forEach(e=>{let yes=Array.isArray(state.selected)?state.selected.includes(e.dataset.value):state.selected===e.dataset.value;e.classList.toggle('selected',yes);e.setAttribute('aria-pressed',yes)});if(!multi){moving=true;transitionTimer=setTimeout(()=>{moving=false;next()},380)}});
-if($('#next'))$('#next').onclick=()=>{if(!moving)next()};if($('#back'))$('#back').onclick=()=>{clearTimeout(transitionTimer);saveFields();saveSelection();state.step--;state.history.length=state.step;render()};if($('#edit'))$('#edit').onclick=()=>{saveFields();state.step=1;render()};if($('#skip'))$('#skip').onclick=()=>{a.notes='';remember('跳过');state.step++;render()};if($('#step-form'))$('#step-form').onsubmit=e=>{e.preventDefault();if(!moving)next()};if($('#download'))$('#download').onclick=download;if($('#print'))$('#print').onclick=printReport;
-requestAnimationFrame(()=>{const heading=$('#current-question h2');heading?.focus({preventScroll:true});if(state.step>0)$('#current-question')?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'})});}
-function saveFields(){const f=$('#step-form');if(f){for(const[k,v]of new FormData(f))state.answers[k]=typeof v==='string'?v.trim():v;if(current()==='consent')state.answers.consent=f.elements.consent.checked?'on':''}}
-function saveSelection(){const k=current(),a=state.answers;if(state.selected===null||state.selected===undefined)return;if(k==='path'){if(a.path!==state.selected){delete a.employer;delete a.achievements}a.path=state.selected}if(k==='status'){a.statusChoice=state.selected;if(state.selected!=='其他 / 不确定')a.status=state.selected}if(k==='location')a.location=state.selected;if(k==='timeline')a.timeline=state.selected;if(k==='background')a[a.path==='H-1B'?'employer':'achievements']=state.selected}
-function remember(override){const a=state.answers,k=current();const values={name:a.name,location:a.location,status:a.status,path:a.path,profession:a.profession,background:a.path==='H-1B'?a.employer:(a.achievements||[]).join('、'),timeline:a.timeline,notes:a.notes||'跳过',email:a.email};state.history[state.step]={question:$('#current-question h2').textContent,answer:override||values[k]||''};state.history.length=state.step+1}
-function next(){const k=current(),f=$('#step-form');if(f&&!f.reportValidity())return;if(['location','status','path','background','timeline'].includes(k)&&(!state.selected||Array.isArray(state.selected)&&!state.selected.length)){$('#error').textContent='选一个最接近你的情况就好。';return}if(f){const input=f.querySelector('input:not([type="checkbox"])');if(input&&!input.value.trim()){$('#error').textContent='在这里写一点，再继续吧。';input.focus();return}}saveFields();saveSelection();remember();if(state.step<steps.length-1){state.step++;render()}}
-function materials(){return state.answers.path==='H-1B'?['更新后的个人简历及学历资料','职位说明与雇主支持情况说明','现有身份文件与到期日期（咨询时提供）']:['个人简历及专业经历时间线','奖项、发表、媒体报道等成就目录','评审、原创贡献或关键岗位的证明线索']}
-function report(){const a=state.answers;return `示范 · 移民咨询准备摘要\n生成日期：${new Date().toLocaleDateString('zh-CN')}\n\n本文件仅按用户自述整理，未经律师审核，不构成法律意见、资格认定或委托关系。\n\n称呼：${a.name}\n邮箱：${a.email}\n所在地区：${a.location}\n当前身份：${a.status}\n关注方向：${a.path}\n专业领域：${a.profession}\n背景线索：${a.employer||(a.achievements||[]).join('、')}\n时间安排：${a.timeline}\n补充说明：${a.notes||'无'}\n\n建议整理的资料\n${materials().map((t,i)=>`${i+1}. ${t}`).join('\n')}\n\n咨询时待确认\n1. 结合具体事实，哪些申请方向值得进一步评估？\n2. 目前证据有哪些缺口，需要如何补充？\n3. 现有身份及时间安排是否需要优先处理？\n4. 律师服务范围、预计费用与后续步骤是什么？\n\n审核状态：待持牌律师独立评估\n本演示未向任何律所提交信息。`}
-function download(){const url=URL.createObjectURL(new Blob(['\ufeff'+report()],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='示范-咨询准备摘要.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-function printReport(){const w=window.open('','_blank');if(!w){$('#error').textContent='请允许打开打印窗口，或下载文本摘要。';return}w.document.write(`<html lang="zh-CN"><head><title>移民咨询准备摘要</title><style>body{padding:40px;font:15px/1.9 sans-serif}pre{white-space:pre-wrap;font:inherit}</style></head><body><pre>${esc(report())}</pre></body></html>`);w.document.close();w.print()}
-function show(title,text){$('#dialog-content').innerHTML=`<h2>${title}</h2>${text}`;$('#dialog').showModal()}
-$('#about').onclick=()=>show('从一个对话开始','<p>选择方向 → 介绍背景 → 补充经历 → 确认时间 → 生成免费咨询准备摘要。</p><p>H-1B 分支收集雇主线索；EB-1A、O-1 与探索分支收集专业成就。最终由持牌律师决定是否接案和如何提供法律服务。</p>');$('#privacy').onclick=()=>show('你的信息，由你掌握','<p>当前为交互演示。填写内容只保存在当前页面内存中，不上传服务器、不使用本地存储，刷新或关闭页面即清除。摘要由浏览器本地生成。</p><p>请勿填写护照号码、社会安全号码或上传原始证件。未来接入律所系统时，应先展示对应隐私政策和数据授权。</p>');$('#menu').onclick=()=>show('隐私说明','<p>...</p>');$('.close').onclick=()=>$('#dialog').close();render();
+const PRIVACY = `
+<p>我们通过这份问卷收集你填写的称呼、联系方式和移民相关背景，用于了解你的情况并与你联系。</p>
+<p>请不要填写护照号码、社会安全号码，也不要上传证件原件。</p>
+<p>你的回答只有本站的管理人员可以查看，不会出售或用于其他用途。如需查看、更正或删除你提交的内容，可以回复我们发给你的邮件提出。</p>
+<p>填写本问卷不构成法律意见，也不代表已经建立委托关系。</p>`;
+
+let moving = false;
+let timer;
+
+// ---------------------------------------------------------------- 题目流程
+
+// 一个人实际会被问到哪些题，和后端 server/lib.js 里的 walkForm 是同一套规则：
+// 从第一项开始；答完一项，单选题的选项有自己的线就走那条，否则走这一项默认的线；走到 'end' 就是确认提交。
+// 还没回答的那一项先按默认的线往后排，等回答了再重新算。
+function visible() {
+  const items = state.form.questions;
+  const index = new Map(items.map((q, i) => [q.id, i]));
+  const list = [];
+  let at = items.length ? 0 : -1;
+  for (let steps = 0; at >= 0 && steps < items.length; steps++) {
+    const q = items[at];
+    list.push(q);
+    const answer = state.answers[q.id];
+    const own = q.type === 'single' && typeof answer === 'string' ? q.routes?.[answer] : undefined;
+    const target = own ?? q.next;
+    at = index.has(target) ? index.get(target) : -1;
+  }
+  return list;
+}
+
+function labelOf(q, value) {
+  const option = (q.options || []).find((o) => o.value === value);
+  return option ? option.label : value;
+}
+
+function answerText(q) {
+  const value = state.answers[q.id];
+  if (q.type === 'info') return '';
+  if (value === undefined || value === '') return '跳过';
+  if (Array.isArray(value)) return value.map((v) => labelOf(q, v)).join('、');
+  return q.type === 'single' ? labelOf(q, value) : value;
+}
+
+// ---------------------------------------------------------------- 画面
+
+function optionButtons(q) {
+  const multi = q.type === 'multi';
+  const cards = multi || q.options.some((o) => o.icon);
+  const chosen = (v) => (multi ? (state.selected || []).includes(v) : state.selected === v);
+  return `<div class="${cards ? 'options' : 'bars'}">${q.options.map((o) => `
+    <button type="button" class="${cards ? 'option' : 'bar'} ${chosen(o.value) ? 'selected' : ''}" data-value="${esc(o.value)}" aria-pressed="${chosen(o.value)}">
+      ${cards ? `${multi ? '<span class="choice-check" aria-hidden="true"></span>' : ''}${icon(o.icon)}` : ''}
+      <span><strong>${esc(o.label)}</strong></span>
+    </button>`).join('')}</div>`;
+}
+
+function inputField(q) {
+  const value = esc(state.answers[q.id]);
+  const common = `id="answer" name="answer" placeholder="${esc(q.placeholder)}" maxlength="${q.max_length}" ${q.required ? 'required' : ''}`;
+  if (q.type === 'long_text') {
+    return `<form id="step-form" novalidate><label class="sr-only" for="answer">${esc(q.title)}</label><textarea ${common}>${value}</textarea></form>`;
+  }
+  const type = { email: 'email', phone: 'tel', date: 'date' }[q.type] || 'text';
+  const auto = q.field_key === 'name' ? 'given-name' : q.type === 'email' ? 'email' : q.type === 'phone' ? 'tel' : 'off';
+  return `<form id="step-form" novalidate><label class="sr-only" for="answer">${esc(q.title)}</label><input ${common} type="${type}" value="${value}" autocomplete="${auto}"></form>`;
+}
+
+function history(list) {
+  return `<div class="chat-history">${list.slice(0, state.pos).map((q) => `
+    <div class="past-question">${esc(q.title)}</div>
+    ${q.type === 'info' ? '' : `<div class="answer-row"><span class="answer-bubble">${esc(answerText(q))}</span></div>`}`).join('')}</div>`;
+}
+
+function render() {
+  moving = false;
+  const list = visible();
+  const content = $('#content');
+
+  if (state.done) {
+    content.innerHTML = `${history(list)}<div class="conversation fade" id="current-question"><h2 tabindex="-1">谢谢，已经收到你的信息。</h2><p class="hint">请留意你的邮箱。</p></div>`;
+    focusCurrent();
+    return;
+  }
+
+  // 全部答完：确认隐私说明并提交
+  if (state.pos >= list.length) {
+    content.innerHTML = `${history(list)}<div class="conversation fade" id="current-question">
+      <h2 tabindex="-1">最后一步，确认后提交。</h2>
+      <label class="check"><input type="checkbox" id="consent"><span>我已阅读并同意<button type="button" class="text-link" id="open-privacy">隐私说明</button>，同意提交以上信息用于咨询联系。</span></label>
+      <input class="trap" id="website" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <p id="error" class="error" role="alert"></p>
+      <div class="actions"><button class="primary" id="submit">提交</button></div>
+      <div class="quiet-controls"><button id="back" class="back">返回</button></div>
+    </div>`;
+    $('#open-privacy').onclick = showPrivacy;
+    $('#back').onclick = back;
+    $('#submit').onclick = submit;
+    focusCurrent();
+    return;
+  }
+
+  const q = list[state.pos];
+  const choice = q.type === 'single' || q.type === 'multi';
+  const saved = state.answers[q.id];
+  state.selected = q.type === 'multi' ? (Array.isArray(saved) ? saved : []) : q.type === 'single' ? (saved ?? null) : null;
+
+  const body = choice ? optionButtons(q) : q.type === 'info' ? '' : inputField(q);
+  const needsButton = q.type !== 'single';
+  content.innerHTML = `${history(list)}<div class="conversation fade" id="current-question">
+    ${q.reply ? `<p class="reply">${esc(q.reply)}</p>` : ''}
+    <h2 tabindex="-1">${esc(q.title)}</h2>
+    ${q.hint ? `<p class="hint">${esc(q.hint)}</p>` : ''}
+    ${body}
+    <p id="error" class="error" role="alert"></p>
+    ${needsButton ? '<div class="actions"><button class="primary" id="next">继续</button></div>' : ''}
+    <div class="quiet-controls">
+      ${state.pos > 0 ? '<button id="back" class="back">返回</button>' : ''}
+      ${!q.required && q.type !== 'info' ? '<button id="skip" class="back">跳过</button>' : ''}
+    </div>
+  </div>`;
+
+  content.querySelectorAll('[data-value]').forEach((el) => {
+    el.onclick = () => {
+      if (moving) return;
+      const v = el.dataset.value;
+      if (q.type === 'multi') {
+        const exclusive = (value) => q.options.find((o) => o.value === value)?.exclusive;
+        const now = state.selected;
+        state.selected = exclusive(v)
+          ? (now.includes(v) ? [] : [v])
+          : now.includes(v) ? now.filter((x) => x !== v) : [...now.filter((x) => !exclusive(x)), v];
+      } else {
+        state.selected = v;
+      }
+      content.querySelectorAll('[data-value]').forEach((e) => {
+        const yes = Array.isArray(state.selected) ? state.selected.includes(e.dataset.value) : state.selected === e.dataset.value;
+        e.classList.toggle('selected', yes);
+        e.setAttribute('aria-pressed', yes);
+      });
+      if (q.type === 'single') {
+        moving = true;
+        timer = setTimeout(() => { moving = false; next(); }, 380);
+      }
+    };
+  });
+  if ($('#next')) $('#next').onclick = () => { if (!moving) next(); };
+  if ($('#back')) $('#back').onclick = back;
+  if ($('#skip')) $('#skip').onclick = () => { delete state.answers[q.id]; state.pos++; render(); };
+  if ($('#step-form')) $('#step-form').onsubmit = (e) => { e.preventDefault(); if (!moving) next(); };
+  focusCurrent();
+}
+
+function focusCurrent() {
+  requestAnimationFrame(() => {
+    const field = $('#answer');
+    const heading = $('#current-question h2');
+    if (state.pos > 0 || state.done) {
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      $('#current-question')?.scrollIntoView({ behavior: reduce ? 'instant' : 'smooth', block: 'start' });
+    }
+    (field || heading)?.focus({ preventScroll: true });
+  });
+}
+
+function fail(message) {
+  $('#error').textContent = message;
+}
+
+// ---------------------------------------------------------------- 动作
+
+function next() {
+  const q = visible()[state.pos];
+  if (q.type === 'single' || q.type === 'multi') {
+    const empty = q.type === 'multi' ? !state.selected.length : !state.selected;
+    if (empty && q.required) return fail('选一个最接近你的情况就好。');
+    if (empty) delete state.answers[q.id];
+    else state.answers[q.id] = state.selected;
+  } else if (q.type !== 'info') {
+    const field = $('#answer');
+    const value = field.value.trim();
+    if (!value && q.required) { field.focus(); return fail('在这里写一点，再继续吧。'); }
+    if (value && q.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) { field.focus(); return fail('邮箱格式好像不对，再看一下？'); }
+    if (value && q.type === 'phone' && !/^[+\d][\d\s().-]{5,29}$/.test(value)) { field.focus(); return fail('电话格式好像不对，再看一下？'); }
+    if (value) state.answers[q.id] = value;
+    else delete state.answers[q.id];
+  }
+  state.pos++;
+  render();
+}
+
+function back() {
+  clearTimeout(timer);
+  if (state.sending || state.pos === 0) return;
+  state.pos--;
+  render();
+}
+
+async function submit() {
+  if (state.sending) return;
+  if (!$('#consent').checked) return fail('请先勾选同意隐私说明。');
+  const answers = {};
+  for (const q of visible()) {
+    if (state.answers[q.id] !== undefined) answers[q.id] = state.answers[q.id];
+  }
+  state.sending = true;
+  const button = $('#submit');
+  button.disabled = true;
+  button.textContent = '正在提交…';
+  fail('');
+  try {
+    const res = await fetch('/api/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        version_id: state.form.version_id,
+        consent: true,
+        consent_version: state.form.consent_version,
+        website: $('#website').value,
+        answers,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || '提交没有成功，请稍后再试。');
+    state.done = true;
+    state.sending = false;
+    render();
+  } catch (err) {
+    state.sending = false;
+    button.disabled = false;
+    button.textContent = '提交';
+    fail(err instanceof TypeError ? '网络好像断了，请检查后再试一次。' : err.message);
+  }
+}
+
+function showPrivacy() {
+  $('#dialog-content').innerHTML = `<h2>隐私说明</h2>${PRIVACY}`;
+  $('#dialog').showModal();
+}
+
+async function start() {
+  try {
+    const res = await fetch('/api/form');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !Array.isArray(data.questions) || !data.questions.length) throw new Error();
+    state.form = data;
+    render();
+  } catch {
+    $('#content').innerHTML = '<div class="conversation"><h2>问卷暂时打不开。</h2><p class="hint">请稍后刷新页面再试。</p></div>';
+  }
+}
+
+$('#menu').onclick = showPrivacy;
+$('.close').onclick = () => $('#dialog').close();
+start();

@@ -1,34 +1,53 @@
 # 示范
 
-独立品牌的移民律所客户接待原型，借鉴 Lemonade 的简洁引导与逐步问答节奏。
+移民咨询的客户问卷系统：客户在前台像聊天一样逐题作答，管理员在控制台查看、导出填写记录，并管理题库。
+
+## 组成
+
+| 位置 | 作用 |
+|---|---|
+| `dist/` | 前台问答页（`index.html`、`app.js`、`style.css`） |
+| `dist/admin/` | 控制台页面，地址是 `/admin/` |
+| `functions/api/` | 后端接口，运行在 Cloudflare Pages Functions |
+| `server/lib.js` | 后端接口共用的代码：数据库访问、登录校验、问卷校验、CSV |
+| `supabase/schema.sql` | 数据库结构，在 Supabase 的 SQL Editor 里运行一次 |
+
+浏览器不直接访问数据库。所有读写都经过后端接口，数据库的管理密钥只放在服务端的环境变量里。
+
+## 环境变量
+
+| 名称 | 内容 |
+|---|---|
+| `SUPABASE_URL` | Supabase 项目地址 |
+| `SUPABASE_SERVICE_ROLE_KEY` | 管理密钥（`sb_secret_` 开头，或旧版 `service_role`）。不要写进代码或发给别人 |
+| `ADMIN_EMAILS` | 允许登录控制台的邮箱，多个用英文逗号隔开 |
+
+本地运行：把 `.dev.vars.example` 复制为 `.dev.vars` 并填入真实的值。这个文件不会被提交。
+线上：在 Cloudflare Pages 项目的 Settings → Variables and Secrets 里填同样三项。
 
 ## 本地运行
 
 ```sh
-cd dist
-python3 -m http.server 4173
+npx wrangler@4 pages dev dist --port 8788 --compatibility-date 2026-01-01
 ```
 
-打开 http://localhost:4173 。无构建依赖。静态产物在 dist/。
+打开 http://localhost:8788 是前台，http://localhost:8788/admin/ 是控制台。
 
-## 已实现
+## 部署到 Cloudflare Pages
 
-- 极简白底连续对话（左侧提问、右侧回答气泡、插图选项卡片）、单屏一句提问、单选自动衔接、H-1B 雇主分支、EB-1A/O-1 专业成就分支
-- 返回修改、必填和邮箱校验、多选互斥处理
-- 填写邮箱后结束，显示关注邮箱提示；当前演示不发送邮件
-- 响应式布局、流程说明与隐私弹窗
+1. 在 Cloudflare 新建 Pages 项目并连接这个 GitHub 仓库。
+2. 构建命令留空，输出目录填 `dist`。
+3. 填入上面三个环境变量，其中密钥选择“加密”。
+4. 在 Supabase 的 Authentication → Users 里创建管理员账号，邮箱要与 `ADMIN_EMAILS` 一致。
 
-演示不提交客户信息，不发送邮件，不持久化用户输入。当前页面不再显示摘要确认、勾选和下载入口。没有律师审核、案件资格判断或正式法律文件生成。
+## 管理员账号
 
-## 后续 Supabase 接入
+控制台用 Supabase 自带的邮箱加密码登录。只有邮箱在 `ADMIN_EMAILS` 里、并且已验证的账号才能进入。
+建议在 Supabase 的 Authentication 设置里关闭公开注册。
 
-supabase/schema.sql 提供记录表和默认封闭 RLS。正式上线时：
-1. 在 Supabase 执行迁移，通过服务端环境变量配置 URL 和 service role key；严禁把 service role key 放前端。
-2. 增加服务端提交接口：校验白名单字段/长度/邮箱/同意版本，添加速率限制，再写入 intakes。
-3. 为律师工作台增加登录、机构成员和案件范围授权；按机构制定 RLS，避免跨律所读取。
-4. 将生成摘要与提交资料分开授权，明确告知真实律所、留存期限和撤回渠道。
-5. 当前站点为纯静态，不包含后端、邮件服务或已连接的 Supabase。
+## 还没做的
 
-## GitHub Pages
-
-已准备 `.github/workflows/pages.yml`。将项目推送到 GitHub 仓库 main 分支后，在仓库 Settings → Pages → Build and deployment 选择 GitHub Actions。工作流会发布 dist/，无需构建依赖。
+- 提交接口的人机验证（Cloudflare Turnstile）和频率限制
+- 修改题目的草稿与预览（现在保存后立即生效）
+- 提交后的通知邮件
+- 隐私说明的正式文案，需由持牌律师确认

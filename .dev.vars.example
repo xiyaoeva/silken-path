@@ -1,0 +1,4 @@
+# 复制这个文件并改名为 .dev.vars，然后填入真实的值。.dev.vars 不会被提交到 GitHub。
+SUPABASE_URL=https://你的项目编号.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=你的管理密钥（sb_secret_ 开头，或旧版的 service_role）
+ADMIN_EMAILS=你登录控制台用的邮箱

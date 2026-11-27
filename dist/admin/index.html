@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>示范 · 控制台</title>
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+<section id="login-view" hidden>
+  <form id="login-form" class="card login">
+    <h1>示范 · 控制台</h1>
+    <label>邮箱<input type="email" name="email" autocomplete="username" required></label>
+    <label>密码<input type="password" name="password" autocomplete="current-password" required></label>
+    <p class="error" id="login-error" role="alert"></p>
+    <button class="primary">登录</button>
+  </form>
+</section>
+
+<div id="app-view" hidden>
+  <header class="top">
+    <strong>示范 · 控制台</strong>
+    <nav>
+      <button data-tab="records" class="tab active">填写记录</button>
+      <button data-tab="bank" class="tab">题库与问卷</button>
+    </nav>
+    <span class="who"><span id="who"></span><button id="logout" class="link">退出</button></span>
+  </header>
+
+  <main id="records-tab">
+    <div class="toolbar">
+      <input id="f-q" type="search" placeholder="搜索称呼或邮箱">
+      <select id="f-status" aria-label="处理状态"><option value="">全部状态</option></select>
+      <select id="f-path" aria-label="关注方向"><option value="">全部方向</option></select>
+      <label class="inline">从<input id="f-from" type="date"></label>
+      <label class="inline">到<input id="f-to" type="date"></label>
+      <span class="grow"></span>
+      <span id="count" class="muted"></span>
+      <button id="export-all" class="primary">导出当前列表</button>
+    </div>
+    <div class="split">
+      <div class="card table-wrap">
+        <table>
+          <thead><tr><th>提交时间</th><th>称呼</th><th>邮箱</th><th>关注方向</th><th>状态</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <p id="empty" class="muted pad" hidden>还没有符合条件的填写记录。</p>
+      </div>
+      <aside id="detail" class="card" hidden></aside>
+    </div>
+  </main>
+
+  <main id="bank-tab" hidden>
+    <div class="toolbar">
+      <input id="b-q" type="search" placeholder="搜索题目文字">
+      <select id="b-type" aria-label="题型"><option value="">全部题型</option></select>
+      <label class="inline"><input type="checkbox" id="b-archived"> 显示已归档</label>
+      <span class="grow"></span>
+      <span id="dirty" class="warn" hidden>问卷有改动还没保存</span>
+      <button id="undo" disabled title="撤销（Ctrl/⌘ + Z）">↶ 撤销</button>
+      <button id="redo" disabled title="重做（Ctrl/⌘ + Shift + Z）">↷ 重做</button>
+      <button id="history-toggle">历史记录 <span id="history-count" class="count">0</span></button>
+      <button id="new-question">新建题目</button>
+      <button id="save-form" class="primary" disabled>保存问卷</button>
+    </div>
+    <div class="flow-row">
+      <div class="card" id="flow-card">
+        <div id="flow-bar"></div>
+        <div id="flow-wrap"><div id="flow"></div></div>
+        <div id="orphans" hidden></div>
+      </div>
+      <aside class="card" id="history" hidden>
+        <h2>历史记录</h2>
+        <p class="muted">点任意一条，流程图就回到那时的样子。最新的在最上面。</p>
+        <div id="history-list"></div>
+      </aside>
+    </div>
+    <div class="card" id="bank"></div>
+  </main>
+</div>
+
+<dialog id="dialog"><div id="dialog-body"></div></dialog>
+<div id="toast" role="status" hidden></div>
+<script src="admin.js"></script>
+</body>
+</html>
